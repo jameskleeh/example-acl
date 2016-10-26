@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.security.acls.domain.BasePermission
 import spock.lang.Specification
 import test.acl.g30x.auth.User
-
+import org.springframework.security.acls.model.AclCache
 /**
  * See the API for {@link grails.test.mixin.domain.DomainClassUnitTestMixin} for usage instructions
  */
@@ -19,6 +19,9 @@ class PersonSpec extends Specification {
     @Autowired
     AclUtilService aclUtilService
 
+    @Autowired
+    AclCache aclCache
+
     def setup() {
     }
 
@@ -27,13 +30,25 @@ class PersonSpec extends Specification {
 
     void "test acl"() {
         given:
-        User user = new User(username: "admin", password: "admin").save(failOnError: true, flush: true)
-        Person person = new Person().save(flush: true, failOnError: true)
-        SpringSecurityUtils.doWithAuth("admin") {
-            aclUtilService.addPermission(Person, person.id, 'user', BasePermission.READ)
+        Person person = null
+        Person.withNewTransaction{
+            User user = new User(username: "admin", password: "admin").save(failOnError: true, flush: true)
+            person = new Person().save(flush: true, failOnError: true)
+            SpringSecurityUtils.doWithAuth("admin") {
+                aclUtilService.addPermission(Person, person.id, 'user', BasePermission.READ)
+            }
         }
 
         expect:
-        aclUtilService.readAcl(Person, person.id)
+        theFollowingToSucceed(person)==true;
+        
+    }
+    def theFollowingToSucceed(Person person){
+       Person.withNewTransaction{
+        aclCache.clearCache() // the problem only occurs if the ACL is not yet cached. We therefore clear the cache first to make sure it happens
+        println aclUtilService.readAcl(person)
+        aclUtilService.deleteAcl(person)
+        return true
+       }
     }
 }
